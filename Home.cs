@@ -14,9 +14,8 @@ namespace SpellChecker
 {
     public partial class Home : Form
     {
-        private Dictionary<string, int> _words = new Dictionary<string, int>();
-        private Dictionary<char, int> _alphabet = new Dictionary<char, int>();
-        private Spelling _spelling = new Spelling();
+        private Dictionary _dictionary = new Dictionary();
+        private Spelling _spelling;
 
         public Home()
         {
@@ -40,7 +39,8 @@ namespace SpellChecker
                         using (stream)
                         {
                             StreamReader reader = new StreamReader(stream, Encoding.Default);
-                            _spelling.PopulateDictionary(reader.ReadToEnd().Replace(Environment.NewLine, " "));
+                            _dictionary.PopulateDictionary(reader.ReadToEnd().Replace(Environment.NewLine, " "));
+                            _spelling = new Spelling(_dictionary);
 
                             reader.Dispose();
                         }
@@ -52,22 +52,21 @@ namespace SpellChecker
                 }
             }
 
-            foreach (string word in _spelling.GetDictionary())
+            foreach (string word in _dictionary.Words.Keys)
             {
                 if(!dictionaryListBox.Items.Contains(word))
                     dictionaryListBox.Items.Add(word);
             }
 
-            totalItemsLabel.Text = "Всего слов в словаре: " + _spelling.TotalWords.ToString();
+            totalItemsLabel.Text = "Всего слов в словаре: " + _dictionary.TotalWords.ToString();
         }
 
         private void correctButton_Click(object sender, EventArgs e)
         {
-            outputTextBox.Text = "";
-            foreach(string item in userInputTextBox.Text.Split(' '))
-            {
-                outputTextBox.Text += " " + _spelling.Correct(item);
-            }
+            if (_spelling != null)
+                outputTextBox.Text = _spelling.Correct(userInputTextBox.Text);
+            else
+                MessageBox.Show("Словарь не загружен");
         }
     }
 }

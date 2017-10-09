@@ -4,131 +4,222 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace SpellChecker
 {
-    public class Spelling
+    class Spelling
     {
-        private Dictionary<String, int> _dictionary;
-        private string _alphabet;
-        private HashSet<char> _alphabetSet;
+        private Dictionary _dictionary;
+        private NorwigsCorrector _corrector;
 
-        public Spelling(string input = "")
+        public Spelling(Dictionary dictionary)
         {
-            _dictionary = new Dictionary<String, int>();
-            _alphabetSet = new HashSet<char>();
-            _alphabet = string.Empty;
+            _dictionary = dictionary;
+            _corrector = new NorwigsCorrector(dictionary);
+        }
+        
+        public string Correct(string line)
+        {
+            var strLine = StructurizeLine(line);
 
-            if(string.IsNullOrWhiteSpace(input))
-                PopulateDictionary(input);
+            ApplyCorrection(strLine);
+
+            StringBuilder output = new StringBuilder();
+            foreach(var word in strLine)
+            {
+                output.Append(word.Item + " ");
+            }
+
+            return output.ToString();
         }
 
-        public void PopulateDictionary(string input)
+        private LinkedList<StringItem> StructurizeLine(string line)
         {
-            foreach (string entity in input.Split(' '))
+            var strLine = new LinkedList<StringItem>();
+
+            bool newWordFlag = false;
+            foreach(char c in line)
             {
-                string word = Regex.Replace(entity.ToLower(), @"(\p{P})|([0-9])", "");
-
-                if (string.IsNullOrWhiteSpace(word))
-                    continue;
-
-                if (_dictionary.ContainsKey(word))
-                    _dictionary[word]++;
-                else
-                    _dictionary.Add(word, 1);
-
-                foreach (char c in word)
+                if(char.IsLetter(c))
                 {
-                    if (char.IsWhiteSpace(c))
+                    if (strLine.Last != null && !strLine.Last.Value.NotLetter && !newWordFlag)
+                    {
+                        strLine.Last.Value.Item += c.ToString();
+                        
+                    }
+                    else
+                    {
+                        strLine.AddLast(new StringItem { Item = c.ToString(), NotLetter = false });
+                        newWordFlag = false;
+                    }
+                }
+                if(c==' ')
+                {
+                    if (_dictionary.Words.ContainsKey(strLine.Last.Value.Item.ToLower()))
+                        strLine.Last.Value.IsCorrect = true;
+                    else
+                        strLine.Last.Value.IsCorrect = false;
+
+                    newWordFlag = true;
+                }
+                if(char.IsDigit(c) || char.IsPunctuation(c))
+                {
+                    strLine.AddLast(new StringItem { Item = c.ToString(), NotLetter = true });
+                }
+            }
+            if (_dictionary.Words.ContainsKey(strLine.Last.Value.Item))
+                strLine.Last.Value.IsCorrect = true;
+
+            return strLine;
+        }
+
+        private void ApplyCorrection(LinkedList<StringItem> list)
+        {
+            LinkedListNode<StringItem> node = list.First;
+
+            for (int i = 0; i < 3; i++)
+            {
+                while (node != null)
+                {
+                    var nextNode = node.Next;
+
+                    if (!node.Value.IsCorrect && !node.Value.NotLetter)
+                    {
+                        switch (i)
+                        {
+                            case 0:
+                                MergeCorrection(node, list);
+                                nextNode = node.Next;
+                                break;
+                            case 1:
+                                SplitCorrection(node, list);
+                                break;
+                            case 2:
+                                node.Value.Item = _corrector.CorrectWord(node.Value.Item);
+                                break;
+                        }
+                    }
+                    node = nextNode;
+                }
+                node = list.First;
+            }
+        }
+        
+        private void SplitCorrection(LinkedListNode<StringItem> node, LinkedList<StringItem> list)
+        {
+            LinkedList<StringItem> output = new LinkedList<StringItem>();
+            int letters = 0;
+            bool allAreCorrect = true;
+
+            GetBiggestFromBeginning(node.Value.Item, output);
+
+            foreach(var word in output)
+            {
+                if (!word.IsCorrect)
+                    allAreCorrect = false;
+
+                if (word.Item.Length == 1)
+                    letters++;
+            }
+
+            if (!allAreCorrect)
+            {
+                string corrected = _corrector.CorrectWord(node.Value.Item);
+                if (_dictionary.Words.ContainsKey(corrected))
+                {
+                    node.Value.Item = corrected;
+                    node.Value.IsCorrect = true;
+
+                    return;
+                }
+            }
+
+            if (letters > 1)
+                return;
+
+            foreach (var item in output)
+            {
+                list.AddBefore(node, item);
+            }
+
+            list.Remove(node);
+        }
+
+        private void MergeCorrection(LinkedListNode<StringItem> node, LinkedList<StringItem> list)
+        {
+            //merge sides
+            if (MergeHelper(list, node, node.Previous, node, node.Next))
+                return;
+
+            //merge next
+            if (MergeHelper(list, node, node, node.Next))
+                return;
+
+            //merge previous
+            if (MergeHelper(list, node, node.Previous, node))
+                return;
+        }
+
+        private bool MergeHelper(LinkedList<StringItem> list, LinkedListNode<StringItem> centerNode, params LinkedListNode<StringItem>[] nodes)
+        {
+            StringBuilder sb = new StringBuilder();
+            bool hasOneLetterWords = false;
+
+            foreach(var sn in nodes)
+            {
+                if (sn == null || sn.Value.NotLetter || sb.Length > 12)
+                    return false;
+
+                if (sn.Value.IsCorrect && sn.Value.Item.Length < 2)
+                    hasOneLetterWords = true;
+
+                sb.Append(sn.Value.Item);
+            }
+
+            string merged = (hasOneLetterWords)?sb.ToString(): _corrector.CorrectWord(sb.ToString());
+
+            if (_dictionary.Words.ContainsKey(merged))
+            {
+                centerNode.Value.Item = merged;
+                centerNode.Value.IsCorrect = true;
+
+                foreach(var node in nodes)
+                {
+                    if (node == centerNode)
                         continue;
 
-                    _alphabetSet.Add(c);
+                    //if (node.Value.IsCorrect && node.Value.Item.Length < 2)
+                    //    continue;
+                    else
+                        list.Remove(node);
                 }
+
+                //success
+                return true;
             }
 
-            StringBuilder sb = new StringBuilder();
-            foreach (char letter in _alphabetSet)
-            {
-                sb.Append(letter);
-            }
-
-            _alphabet = sb.ToString();
+            //failure
+            return false;
         }
 
-        public string Correct(string word)
+        private void GetBiggestFromBeginning(string item, LinkedList<StringItem> list)
         {
-            if (string.IsNullOrEmpty(word))
-                return word;
-
-            word = word.ToLower();
-
-            // known()
-            if (_dictionary.ContainsKey(word))
-                return word;
-
-            List<String> list = Edits(word);
-            Dictionary<string, int> candidates = new Dictionary<string, int>();
-
-            foreach (string wordVariation in list)
+            for (int i = item.Length; i > 0; i--)
             {
-                if (_dictionary.ContainsKey(wordVariation) && !candidates.ContainsKey(wordVariation))
-                    candidates.Add(wordVariation, _dictionary[wordVariation]);
-            }
-
-            if (candidates.Count > 0)
-                return candidates.OrderByDescending(x => x.Value).First().Key;
-
-            // known_edits2()
-            foreach (string item in list)
-            {
-                foreach (string wordVariation in Edits(item))
+                string word = item.Substring(0, i);
+                if (_dictionary.Words.ContainsKey(word.ToLower()))
                 {
-                    if (_dictionary.ContainsKey(wordVariation) && !candidates.ContainsKey(wordVariation))
-                        candidates.Add(wordVariation, _dictionary[wordVariation]);
+                    list.AddLast(new StringItem { Item = word, IsCorrect = true });
+                    if(word!=item)
+                        GetBiggestFromBeginning(item.Substring(word.Length), list);
+                    break;
+                } else
+                {
+                    if (i == 1)
+                    {
+                        list.AddLast(new StringItem { Item = item, IsCorrect = false });
+                    }
                 }
-            }
-
-            return (candidates.Count > 0) ? candidates.OrderByDescending(x => x.Value).First().Key : word;
-        }
-
-        private List<string> Edits(string word)
-        {
-            var splits = from i in Enumerable.Range(0, word.Length)
-                         select new { a = word.Substring(0, i), b = word.Substring(i) };
-            var deletes = from s in splits
-                          where s.b != "" 
-                          select s.a + s.b.Substring(1);
-            var transposes = from s in splits
-                             where s.b.Length > 1
-                             select s.a + s.b[1] + s.b[0] + s.b.Substring(2);
-            var replaces = from s in splits
-                           from c in _alphabet
-                           where s.b != ""
-                           select s.a + c + s.b.Substring(1);
-            var inserts = from s in splits
-                          from c in _alphabet
-                          select s.a + c + s.b;
-
-            return deletes
-            .Union(transposes) 
-            .Union(replaces)
-            .Union(inserts).ToList();
-        }
-
-        public IEnumerable<string> GetDictionary()
-        {
-            foreach(var word in _dictionary)
-            {
-                yield return word.Key;
-            }
-        }
-
-        public int TotalWords
-        {
-            get
-            {
-                return _dictionary.Count;
             }
         }
     }
