@@ -15,16 +15,20 @@ namespace SpellChecker
             _dictionary = dic;
         }
 
-        public string CorrectWord(string word)
+        public string CorrectWord(string original)
         {
-            if (string.IsNullOrEmpty(word))
-                return word;
+            bool isFirstCapital = false;
 
-            word = word.ToLower();
+            if (string.IsNullOrEmpty(original))
+                return original;
 
+            if (char.IsUpper(original[0]))
+                isFirstCapital = true;
+
+            string word = original.ToLower();
             // known()
             if (_dictionary.Words.ContainsKey(word))
-                return word;
+                return original;
 
             List<String> list = Edits(word);
             Dictionary<string, double> candidates = new Dictionary<string, double>();
@@ -36,7 +40,11 @@ namespace SpellChecker
             }
 
             if (candidates.Count > 0)
-                return candidates.OrderBy(x => x.Value).First().Key;
+            {
+                string result = candidates.OrderBy(x => x.Value).First().Key;
+                return (isFirstCapital)? char.ToUpper(result[0]) + result.Substring(1): result;
+            }
+               
 
             // known_edits2()
             foreach (string item in list)
@@ -48,8 +56,13 @@ namespace SpellChecker
                 }
             }
 
+            if (candidates.Count > 0)
+            {
+                string result = candidates.OrderBy(x => x.Value).First().Key;
+                return (isFirstCapital) ? char.ToUpper(result[0]) + result.Substring(1) : result;
+            }
 
-            return (candidates.Count > 0) ? candidates.OrderBy(x => x.Value).First().Key : word;
+            return original;
         }
 
         private List<string> Edits(string word)

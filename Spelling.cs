@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace SpellChecker
 {
@@ -24,13 +25,7 @@ namespace SpellChecker
 
             ApplyCorrection(strLine);
 
-            StringBuilder output = new StringBuilder();
-            foreach(var word in strLine)
-            {
-                output.Append(word.Item + " ");
-            }
-
-            return output.ToString();
+            return DestructurizeLine(strLine);
         }
 
         private LinkedList<StringItem> StructurizeLine(string line)
@@ -53,8 +48,11 @@ namespace SpellChecker
                         newWordFlag = false;
                     }
                 }
-                if(c==' ')
+                if(c==' ' || char.IsDigit(c) || char.IsPunctuation(c))
                 {
+                    if (strLine.Last == null)
+                        continue;
+
                     if (_dictionary.Words.ContainsKey(strLine.Last.Value.Item.ToLower()))
                         strLine.Last.Value.IsCorrect = true;
                     else
@@ -71,6 +69,35 @@ namespace SpellChecker
                 strLine.Last.Value.IsCorrect = true;
 
             return strLine;
+        }
+
+        private String DestructurizeLine(LinkedList<StringItem> list)
+        {
+            StringBuilder output = new StringBuilder();
+
+            for (LinkedListNode<StringItem> word = list.First; word != null; word = word.Next)
+            {
+                output.Append(word.Value.Item);
+
+                if (word.Value.NotLetter)
+                {
+                    UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(word.Value.Item[0]);
+
+                    if (category == UnicodeCategory.FinalQuotePunctuation || category == UnicodeCategory.OtherPunctuation)
+                    {
+                        output.Remove(output.Length - 2, 1);
+                        output.Append(" ");
+                    }
+                    else
+                        continue;
+                }
+                else
+                {
+                    output.Append(" ");
+                }
+            }
+
+            return output.ToString();
         }
 
         private void ApplyCorrection(LinkedList<StringItem> list)
@@ -104,7 +131,7 @@ namespace SpellChecker
                 node = list.First;
             }
         }
-        
+
         private void SplitCorrection(LinkedListNode<StringItem> node, LinkedList<StringItem> list)
         {
             LinkedList<StringItem> output = new LinkedList<StringItem>();
@@ -113,29 +140,41 @@ namespace SpellChecker
 
             GetBiggestFromBeginning(node.Value.Item, output);
 
-            foreach(var word in output)
+            string biggestWord = "";
+
+            foreach (var word in output)
             {
+                if (word.Item.Length > biggestWord.Length)
+                    biggestWord = word.Item;
+
                 if (!word.IsCorrect)
                     allAreCorrect = false;
 
-                if (word.Item.Length == 1)
+                if (word.Item.Length <= 2)
                     letters++;
+
+                if (_dictionary.BadSplitCandidates.ContainsKey(word.Item.ToLower()))
+                    allAreCorrect = false;
             }
 
-            if (!allAreCorrect)
-            {
-                string corrected = _corrector.CorrectWord(node.Value.Item);
-                if (_dictionary.Words.ContainsKey(corrected))
-                {
-                    node.Value.Item = corrected;
-                    node.Value.IsCorrect = true;
-
-                    return;
-                }
-            }
-
-            if (letters > 1)
+            if (letters > 2)
                 return;
+
+            string corrected = _corrector.CorrectWord(node.Value.Item);
+
+            bool pickCorrected = _dictionary.Words.ContainsKey(corrected);
+
+            if(pickCorrected && _dictionary.Words.ContainsKey(biggestWord))
+                pickCorrected = _dictionary.Words[biggestWord] < _dictionary.Words[corrected];
+
+
+            if (!allAreCorrect || pickCorrected)
+            {
+                node.Value.Item = corrected;
+                node.Value.IsCorrect = true;
+
+                return;
+            }
 
             foreach (var item in output)
             {
@@ -163,22 +202,18 @@ namespace SpellChecker
         private bool MergeHelper(LinkedList<StringItem> list, LinkedListNode<StringItem> centerNode, params LinkedListNode<StringItem>[] nodes)
         {
             StringBuilder sb = new StringBuilder();
-            bool hasOneLetterWords = false;
 
             foreach(var sn in nodes)
             {
                 if (sn == null || sn.Value.NotLetter || sb.Length > 12)
                     return false;
 
-                if (sn.Value.IsCorrect && sn.Value.Item.Length < 2)
-                    hasOneLetterWords = true;
-
                 sb.Append(sn.Value.Item);
             }
+            
+            string merged = sb.ToString();
 
-            string merged = (hasOneLetterWords)?sb.ToString(): _corrector.CorrectWord(sb.ToString());
-
-            if (_dictionary.Words.ContainsKey(merged))
+            if (_dictionary.Words.ContainsKey(merged.ToLower()))
             {
                 centerNode.Value.Item = merged;
                 centerNode.Value.IsCorrect = true;
@@ -187,9 +222,6 @@ namespace SpellChecker
                 {
                     if (node == centerNode)
                         continue;
-
-                    //if (node.Value.IsCorrect && node.Value.Item.Length < 2)
-                    //    continue;
                     else
                         list.Remove(node);
                 }

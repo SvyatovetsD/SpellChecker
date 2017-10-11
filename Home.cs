@@ -52,21 +52,15 @@ namespace SpellChecker
                 }
             }
 
-            foreach (string word in _dictionary.Words.Keys)
-            {
-                if(!dictionaryListBox.Items.Contains(word))
-                    dictionaryListBox.Items.Add(word);
-            }
-
             totalItemsLabel.Text = "Всего слов в словаре: " + _dictionary.TotalWords.ToString();
         }
 
         private void correctButton_Click(object sender, EventArgs e)
         {
-            if (_spelling != null)
+            if (_spelling != null && userInputTextBox.Text!="")
                 outputTextBox.Text = _spelling.Correct(userInputTextBox.Text);
             else
-                MessageBox.Show("Словарь не загружен");
+                MessageBox.Show("Ошибка");
         }
     }
 }

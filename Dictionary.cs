@@ -13,6 +13,7 @@ namespace SpellChecker
         private string _alphabet;
         private HashSet<char> _alphabetSet;
         private int _analyzedWords;
+        public Dictionary<string, int> BadSplitCandidates { get; private set; }
 
         public Dictionary(string input = "")
         {
@@ -31,6 +32,8 @@ namespace SpellChecker
             {
                 string word = Regex.Replace(entity.ToLower(), @"(^\p{P})|(\p{P}*$)|([0-9])", "");
 
+                bool isAbbreviation = Regex.IsMatch(word, @"\p{P}");
+
                 if (string.IsNullOrWhiteSpace(word))
                     continue;
 
@@ -41,12 +44,15 @@ namespace SpellChecker
                     if (string.IsNullOrWhiteSpace(w))
                         continue;
 
+                    _analyzedWords++;
+
+                    if (w.Length == 1 && _dictionary.ContainsKey(w) && isAbbreviation)
+                        continue;
+
                     if (_dictionary.ContainsKey(w))
                         _dictionary[w]++;
                     else
                         _dictionary.Add(w, 1);
-
-                    _analyzedWords++;
                 }
             }
 
@@ -81,14 +87,7 @@ namespace SpellChecker
 
         private void CleanDictionary()
         {
-            foreach (char c in _alphabetSet)
-            {
-                if (_dictionary.ContainsKey(c.ToString()))
-                {
-                    if ((double)_dictionary[c.ToString()] / _analyzedWords < 0.0004)
-                        _dictionary.Remove(c.ToString());
-                }
-            }
+            BadSplitCandidates =_dictionary.Where(x => x.Key.Length <= 2).Where(x => (double)x.Value / _analyzedWords < 0.0002).ToDictionary(x=>x.Key,x=>x.Value);
         }
 
         public Dictionary<String, int> Words
